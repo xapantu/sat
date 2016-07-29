@@ -1,0 +1,35 @@
+theory Model
+	use import int.Int
+	use import bool.Bool
+	use import list.List
+	use list.Length as ListLength
+	use list.NthNoOpt as ListNth
+
+	type model
+
+	function size model: int
+
+	axiom size_nonnegative:
+		forall m: model. size m >= 0
+
+	function get model int: bool
+
+	predicate sat_clause (m: model) (clause: list (int, bool)) =
+		ListLength.length clause <= size m /\
+		exists i. (0 <= i < ListLength.length clause /\
+		let (index, value) = ListNth.nth i clause in
+		(get m  index = value))
+
+	predicate sat (m: model) (f: list (list (int , bool))) =
+		forall i. 0 <= i < ListLength.length f -> sat_clause m (ListNth.nth i f)
+
+	constant empty: model
+
+	axiom empty_prop1:
+		forall i. get empty i = true
+
+	axiom empty_prop2:
+		size empty = 5
+	
+
+end

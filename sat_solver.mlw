@@ -1,0 +1,18 @@
+module Sat
+	use import int.Int
+	use import model.Model
+	use import list.List
+	use list.Length as ListLength
+
+
+	let val_model () ensures {
+	let f = (Cons (Cons (0, true) Nil) Nil) in
+	
+	ListLength.length f = 1 /\ sat result f
+	} =
+		empty
+
+end
+
+
+
