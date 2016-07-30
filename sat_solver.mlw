@@ -1,8 +1,52 @@
 module Sat
 	use import int.Int
-	use import model.Model
 	use import list.List
+	use import option.Option
 	use list.Length as ListLength
+	use import array.Array
+	use array.Array as Array
+	use import model.Model
+	use model.Model as Model
+	use int.MinMax as IntMax
+	use list.NthNoOpt as ListNth
+	use import ref.Ref
+
+	type formula = list (list (int, bool))
+
+	type assignment = Mod_true | Mod_false | Undef
+
+	type impl_model = {
+		real_model: array assignment;
+		ghost model: model;
+	}
+
+	(*invariant {
+		(forall i: int. 0 <= i < ListLength.length self.real_model ->
+			let (_, a) = ListNth.nth i self.real_model
+			in a <> Undef) /\
+		
+		(forall i j: int.
+			0 <= i < ListLength.length self.real_model /\
+			i < j < ListLength.length self.real_model
+			let (ki, _) = ListNth.nth i self.real_model in
+			let (kj, _) = ListNth.nth j self.real_model in
+			ki <> kj
+			) /\
+		ListLength.length self.real_model <= size self.model /\
+
+		(forall i: int. 0 <= i < ListLength.length self.real_model ->
+			let (ki, v) = ListNth.nth i self.real_model in
+			if Model.get self.model ki then
+				v = Mod_true \/ v = Maybe_true 
+			else
+				v = Mod_false \/ v = Maybe_false) 
+	}*)
+	
+	lemma formula_top:
+		forall m: model. sat m Nil
+
+	lemma formula_no_clause:
+		forall m: model. not (sat m (Cons Nil Nil))
 
 
 	let val_model () ensures {
@@ -11,6 +55,91 @@ module Sat
 	ListLength.length f = 1 /\ sat result f
 	} =
 		empty
+
+
+	let create_impl_model (s: int): impl_model
+		requires { s >= 0 } =
+		{ real_model = Array.make s Undef;
+		  model = create s; }
+
+	let rec max_var (f: formula)
+		ensures {
+			forall i: int. 0 <= i < ListLength.length f ->
+				(forall j: int. 0 <= j < ListLength.length (ListNth.nth i f) ->
+					let (k, _) = ListNth.nth j (ListNth.nth i f) in
+						result >= k)
+						}
+		variant {
+			ListLength.length f }
+						=
+		let rec max_var_aux f
+		ensures {
+			forall j: int. 0 <= j < ListLength.length f ->
+				let (k, _) = ListNth.nth j f in
+				result >= k }
+				variant { ListLength.length f }
+		=
+			match f with
+			| Cons (i, _) b ->
+				IntMax.max (max_var_aux b) i
+			| Nil -> 0
+			end
+		in
+		match f with
+		| Nil -> 0
+		| Cons a b -> IntMax.max (max_var_aux a) (max_var b)
+		end
+
+	let is_sat (f:formula): option impl_model
+		ensures {
+			match result with
+			| None -> (forall m: model. not (sat m f))
+			| Some m -> sat m.model f
+			end
+			}
+		=
+		let i = max_var f in
+		let m = create_impl_model i in
+
+		let rec is_sat_aux (f:formula) (m: impl_model) : bool =
+			match f with
+			| Nil -> true
+			| Cons a b ->
+				let s = ListLength.length a in
+				let valid = ref false in
+				let undef_lit = ref None in
+				for i = 0 to s do
+					let (var, va) = ListNth.nth i a in
+					let mod_va = m.real_model[var] in
+					if mod_va = Undef then
+						undef_lit := Some (var, va)
+					else if (mod_va = Mod_true && va) || (mod_va = Mod_false && not va) then
+						valid := true;
+				done;
+				if !valid then
+					is_sat_aux b m
+				else
+					match !undef_lit with
+					| Some (var, va) ->
+						m.real_model[var] <- (if va then Mod_true else Mod_false);
+						let nm = { model = set m.model var va; real_model=m.real_model; } in
+						if is_sat_aux b nm then
+							true
+						else
+							(m.real_model[var] <- (if va then Mod_false else Mod_true);
+							let nm = { model = set m.model var va; real_model=m.real_model; } in
+							if is_sat_aux f nm then
+								true
+							else
+								(m.real_model[var] <- Undef;
+								false))
+					| None -> false
+					end
+			end
+		in
+		if is_sat_aux f m then Some m
+		else None
+
 
 end
 

@@ -14,6 +14,21 @@ theory Model
 
 	function get model int: bool
 
+	function create int: model
+
+	function set model int bool: model
+
+	axiom size_create:
+		forall i: int. size (create i) = i
+
+	axiom set:
+		forall m: model.
+		forall i: int.
+		forall b: bool.
+		forall j: int.
+			(i <> j -> get (set m i b) j = get m j)
+			/\ (i = j -> get (set m i b) j = b)
+
 	predicate sat_clause (m: model) (clause: list (int, bool)) =
 		ListLength.length clause <= size m /\
 		exists i. (0 <= i < ListLength.length clause /\
@@ -30,6 +45,6 @@ theory Model
 
 	axiom empty_prop2:
 		size empty = 5
-	
+
 
 end
