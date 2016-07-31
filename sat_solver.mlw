@@ -9,7 +9,7 @@ module Sat
 	use model.Model as Model
 	use int.MinMax as IntMax
 	use list.NthNoOpt as ListNth
-	use list.Mem as ListMem
+	(*use list.Mem as ListMem*)
 	use import ref.Ref
 	use array.NumOfEq as ArrayNum
 	use import map.Const as Mapconst
@@ -151,13 +151,13 @@ module Sat
 		forall mymap: Map.map int 'a, u m: int, a b: 'a. m <= u ->
 			Mapocc.occ a mymap (m+1) u = Mapocc.occ a (Map.set mymap m b) (m+1) u
 	
-	lemma list_nth:
+	(*lemma list_nth:
 		forall i: int, l: list 'a. 0 <= i < ListLength.length l ->
 			ListMem.mem (ListNth.nth i l) l
 	
 	lemma list_mem:
 		forall a: 'a,l: list 'a.
-			ListMem.mem a l -> exists i:int. a = ListNth.nth i l
+			ListMem.mem a l -> exists i:int. a = ListNth.nth i l*)
 
 
 
@@ -199,14 +199,14 @@ module Sat
 					invariant {
 						match !undef_lit with
 						| None -> true
-						| Some (var, _) -> m.real_model[var] = Undef /\ 0 <= var < size m.model
+						| Some i -> let (var, _) = ListNth.nth i a in m.real_model[var] = Undef /\ 0 <= var < size m.model /\ 0 <= i < ListLength.length a
 						end
 					}
 					invariant {
 						if !valid then
 						sat_clause m.model a
 						/\ (let (v, b) = ListNth.nth !valid_lit a  in
-							ListMem.mem (v, b) a /\ 0 <= !valid_lit < ListLength.length a /\
+							0 <= !valid_lit < ListLength.length a /\
 							if b then
 								Map.get mymap v = Mod_true
 							else
@@ -219,7 +219,7 @@ module Sat
 					assert { 0 <= var < size m.model };
 					let mod_va = m.real_model[var] in
 					if mod_va = Undef then
-						undef_lit := Some (var, va)
+						undef_lit := Some i
 					else if (mod_va = Mod_true && va) || (mod_va = Mod_false && not va) then
 						(
 						assert { get m.model var = va /\ sat_clause m.model a };
@@ -230,11 +230,15 @@ module Sat
 					is_sat_aux b m mymap
 				else
 					match !undef_lit with
-					| Some (var, va) ->
+					| Some i ->
+						let (var, va) = ListNth.nth i a in
 						m.model <- set m.model var va;
 						m.real_model[var] <- (if va then Mod_true else Mod_false);
 						if is_sat_aux b m (Map.set mymap var (if va then Mod_true else Mod_false)) then
-							true
+						(
+						assert { sat_clause m.model a };
+						assert { sat m.model b };
+							true)
 						else
 							(m.model <- set m.model var (not va);
 							m.real_model[var] <- (if va then Mod_false else Mod_true);
