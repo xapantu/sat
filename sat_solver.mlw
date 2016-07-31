@@ -135,6 +135,20 @@ module Sat
 			IntMax.max a b
 		end
 
+	(* Some lemmas for occ *)
+	 lemma map_set0:
+		forall mymap: Map.map int 'a, l m m' u: int, a: 'a. l <= m <= m' <= u ->
+			Mapocc.occ a mymap l u = Mapocc.occ a mymap l m + Mapocc.occ a mymap m m' + Mapocc.occ a mymap m' u
+
+	 lemma map_set1:
+		forall mymap: Map.map int 'a, l m: int, a b: 'a. l <= m ->
+			Mapocc.occ a mymap l m = Mapocc.occ a (Map.set mymap m b) l m
+	 
+	 lemma map_set2:
+		forall mymap: Map.map int 'a, u m: int, a b: 'a. m <= u ->
+			Mapocc.occ a mymap (m+1) u = Mapocc.occ a (Map.set mymap m b) (m+1) u
+
+
 	let is_sat (f:formula): option impl_model
 		requires { valid_formula f }
 		ensures {
@@ -171,6 +185,9 @@ module Sat
 						| Some (var, _) -> m.real_model[var] = Undef /\ 0 <= var < size m.model
 						end
 					}
+					invariant {
+						if !valid then
+						sat_clause m.model a else true }
 					let (var, va) = ListNth.nth i a in
 					(*assert { all_under_clause a ((size m.model) - 1) };*)
 					assert { 0 <= var < size m.model };
@@ -178,10 +195,13 @@ module Sat
 					if mod_va = Undef then
 						undef_lit := Some (var, va)
 					else if (mod_va = Mod_true && va) || (mod_va = Mod_false && not va) then
-						valid := true;
+						(
+						assert { get m.model var = va /\ sat_clause m.model a };
+						valid := true;)
 				done;
 				if !valid then
-					is_sat_aux b m mymap
+					(assert { sat_clause m.model a };
+					is_sat_aux b m mymap)
 				else
 					match !undef_lit with
 					| Some (var, va) ->
@@ -194,16 +214,9 @@ module Sat
 							let nm = { model = set m.model var va; real_model=m.real_model; } in
 							assert { Map.get mymap var = Undef };
 							let ghost mm = (Map.set mymap var (if va then Mod_false else Mod_true)) in
-							assert { Map.get mm var <> Undef };
-							assert { forall i: int. i <> var -> Map.get mm i = Map.get mymap i};
-							assert { 0 <= var < size m.model };
-							assert { Mapocc.occ Undef mymap 0 (var + 1) = (Mapocc.occ Undef mymap 0 var) + (Mapocc.occ Undef mymap var (var+1)) };
-							assert { Mapocc.occ Undef mymap 0 (size m.model) = (Mapocc.occ Undef mymap 0 var) + (Mapocc.occ Undef mymap var (var+1)) + (Mapocc.occ Undef mymap (var+1) (size m.model)) };
-							assert { Mapocc.occ Undef mm 0 (var + 1) = (Mapocc.occ Undef mm 0 var) + (Mapocc.occ Undef mm var (var+1)) };
-							assert { Mapocc.occ Undef mm 0 (size m.model) = (Mapocc.occ Undef mm 0 var) + (Mapocc.occ Undef mm var (var+1)) + (Mapocc.occ Undef mm (var+1) (size m.model)) };
 							assert { forall i: int. 0 <= i < var -> Map.get mm i = Map.get mymap i};
-							assert { Mapocc.occ Undef mymap 0 var = Mapocc.occ Undef mm 0 var };
 							assert { forall i: int. var + 1 <= i <size m.model -> Map.get mm i = Map.get mymap i};
+							assert { Mapocc.occ Undef mymap 0 (size m.model) = (Mapocc.occ Undef mymap 0 var) + (Mapocc.occ Undef mymap var (var+1)) + (Mapocc.occ Undef mymap (var+1) (size m.model)) };
 							assert { Mapocc.occ Undef mymap (var+1) (size m.model) = Mapocc.occ Undef mm (var+1) (size m.model) };
 							assert { Mapocc.occ Undef mymap 0 (size m.model) > Mapocc.occ Undef mm 0 (size m.model) };
 							if is_sat_aux f nm mm then
