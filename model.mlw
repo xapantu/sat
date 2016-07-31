@@ -6,6 +6,8 @@ theory Model
 	use list.NthNoOpt as ListNth
 
 	type model
+	type clause = list (int, bool)
+	type formula = list clause
 
 	function size model: int
 
@@ -31,9 +33,9 @@ theory Model
 			/\ (i = j -> get (set m i b) j = b)
 
 	predicate sat_clause (m: model) (clause: list (int, bool)) =
-		ListLength.length clause <= size m /\
 		exists i. (0 <= i < ListLength.length clause /\
 		let (index, value) = ListNth.nth i clause in
+		0 <= index < size m /\
 		(get m  index = value))
 
 	predicate sat (m: model) (f: list (list (int , bool))) =
@@ -46,6 +48,13 @@ theory Model
 
 	axiom empty_prop2:
 		size empty = 5
+
+	lemma sat_inductive:
+		forall m:model, f: formula.
+		match f with
+		| Nil -> true
+		| Cons a b -> (sat_clause m a /\ sat m b) -> sat m f
+		end
 
 
 end

@@ -9,6 +9,7 @@ module Sat
 	use model.Model as Model
 	use int.MinMax as IntMax
 	use list.NthNoOpt as ListNth
+	use list.Mem as ListMem
 	use import ref.Ref
 	use array.NumOfEq as ArrayNum
 	use import map.Const as Mapconst
@@ -80,8 +81,10 @@ module Sat
 
 	type impl_model = {
 		real_model: array assignment;
-		ghost model: model;
-	} invariant { size self.model = Array.length self.real_model }
+		ghost mutable model: model;
+	} invariant { size self.model = Array.length self.real_model
+		/\ forall i:int. 0 <= i < size self.model ->
+				((self.real_model[i] = Mod_true -> get self.model i) /\ (self.real_model[i] = Mod_false -> not (get self.model i)))  }
 
 	lemma formula_top:
 		forall m: model. sat m Nil
@@ -147,6 +150,15 @@ module Sat
 	 lemma map_set2:
 		forall mymap: Map.map int 'a, u m: int, a b: 'a. m <= u ->
 			Mapocc.occ a mymap (m+1) u = Mapocc.occ a (Map.set mymap m b) (m+1) u
+	
+	lemma list_nth:
+		forall i: int, l: list 'a. 0 <= i < ListLength.length l ->
+			ListMem.mem (ListNth.nth i l) l
+	
+	lemma list_mem:
+		forall a: 'a,l: list 'a.
+			ListMem.mem a l -> exists i:int. a = ListNth.nth i l
+
 
 
 	let is_sat (f:formula): option impl_model
@@ -163,10 +175,14 @@ module Sat
 		let m = create_impl_model (i+1) in
 
 		let rec is_sat_aux (f:formula) (m: impl_model) (ghost mymap: Map.map int assignment) : bool
-		requires { i + 1  = size m.model /\ all_under f i /\ valid_formula f /\ forall i:int. 0 <= i < size m.model -> Map.get mymap i = m.real_model[i] }
+		writes { m.model, m.real_model }
+		requires { i + 1  = size m.model /\ all_under f i /\ valid_formula f /\
+		forall i:int. 0 <= i < size m.model -> Map.get mymap i = m.real_model[i]
+		}
 		variant { (ListLength.length f), Mapocc.occ Undef mymap 0 (size m.model) }
 		ensures {
-			if result then
+		(forall i:int. 0 <= i < size m.model -> Map.get mymap i <> Undef -> Map.get mymap i = m.real_model[i])
+		/\	if result then
 			    sat m.model f
 			else
 				(forall i: int. 0 <= i < size m.model -> m.real_model[i] = Map.get mymap i)
@@ -178,6 +194,7 @@ module Sat
 				let s = ListLength.length a in
 				let valid = ref false in
 				let undef_lit = ref None in
+				let ghost valid_lit = ref 0 in
 				for i = 0 to (s-1) do
 					invariant {
 						match !undef_lit with
@@ -187,7 +204,16 @@ module Sat
 					}
 					invariant {
 						if !valid then
-						sat_clause m.model a else true }
+						sat_clause m.model a
+						/\ (let (v, b) = ListNth.nth !valid_lit a  in
+							ListMem.mem (v, b) a /\ 0 <= !valid_lit < ListLength.length a /\
+							if b then
+								Map.get mymap v = Mod_true
+							else
+								Map.get mymap v = Mod_false)
+						else true }
+
+
 					let (var, va) = ListNth.nth i a in
 					(*assert { all_under_clause a ((size m.model) - 1) };*)
 					assert { 0 <= var < size m.model };
@@ -197,21 +223,21 @@ module Sat
 					else if (mod_va = Mod_true && va) || (mod_va = Mod_false && not va) then
 						(
 						assert { get m.model var = va /\ sat_clause m.model a };
+						valid_lit := i;
 						valid := true;)
 				done;
 				if !valid then
-					(assert { sat_clause m.model a };
-					is_sat_aux b m mymap)
+					is_sat_aux b m mymap
 				else
 					match !undef_lit with
 					| Some (var, va) ->
+						m.model <- set m.model var va;
 						m.real_model[var] <- (if va then Mod_true else Mod_false);
-						let nm = { model = set m.model var va; real_model=m.real_model; } in
-						if is_sat_aux b nm (Map.set mymap var (if va then Mod_true else Mod_false)) then
+						if is_sat_aux b m (Map.set mymap var (if va then Mod_true else Mod_false)) then
 							true
 						else
-							(m.real_model[var] <- (if va then Mod_false else Mod_true);
-							let nm = { model = set m.model var va; real_model=m.real_model; } in
+							(m.model <- set m.model var (not va);
+							m.real_model[var] <- (if va then Mod_false else Mod_true);
 							assert { Map.get mymap var = Undef };
 							let ghost mm = (Map.set mymap var (if va then Mod_false else Mod_true)) in
 							assert { forall i: int. 0 <= i < var -> Map.get mm i = Map.get mymap i};
@@ -219,7 +245,7 @@ module Sat
 							assert { Mapocc.occ Undef mymap 0 (size m.model) = (Mapocc.occ Undef mymap 0 var) + (Mapocc.occ Undef mymap var (var+1)) + (Mapocc.occ Undef mymap (var+1) (size m.model)) };
 							assert { Mapocc.occ Undef mymap (var+1) (size m.model) = Mapocc.occ Undef mm (var+1) (size m.model) };
 							assert { Mapocc.occ Undef mymap 0 (size m.model) > Mapocc.occ Undef mm 0 (size m.model) };
-							if is_sat_aux f nm mm then
+							if is_sat_aux f m mm then
 								true
 							else
 								(m.real_model[var] <- Undef;
