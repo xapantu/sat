@@ -159,6 +159,11 @@ module Sat
 		forall a: 'a,l: list 'a.
 			ListMem.mem a l -> exists i:int. a = ListNth.nth i l*)
 
+	predicate model_consistent (mymap: Map.map int assignment) (m:model) =
+		forall i:int.
+		0 <= i < size m ->
+			((Map.get mymap i = Mod_true -> get m i) /\ (Map.get mymap i = Mod_false -> not (get m i)))
+
 
 
 	let is_sat (f:formula): option impl_model
@@ -185,7 +190,8 @@ module Sat
 		/\	if result then
 			    sat m.model f
 			else
-				(forall i: int. 0 <= i < size m.model -> m.real_model[i] = Map.get mymap i)
+				(forall mo: model. model_consistent mymap mo -> not (sat mo f)) /\
+		(forall i:int. 0 <= i < size m.model -> Map.get mymap i = m.real_model[i])
 			}
 		=
 			match f with
