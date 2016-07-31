@@ -10,38 +10,79 @@ module Sat
 	use int.MinMax as IntMax
 	use list.NthNoOpt as ListNth
 	use import ref.Ref
+	use array.NumOfEq as ArrayNum
+	use import map.Const as Mapconst
+	use map.Map as Map
+	use map.Occ as Mapocc
 
-	type formula = list (list (int, bool))
+	type clause = list (int, bool)
+	type formula = list clause
+
+	predicate valid_clause (c:clause) =
+		forall j: int. 0 <= j < ListLength.length c ->
+		 let (k, _) = ListNth.nth j c in
+		 k >= 0
+
+	predicate valid_formula (f:formula) =
+		forall i: int. 0 <= i < ListLength.length f ->
+			valid_clause (ListNth.nth i f)
+	
+	lemma sub_clause0:
+	forall c:list (int, bool) .
+	valid_clause c ->
+			match c with
+			| Nil -> true
+			| Cons _ b ->
+				(forall i:int. 0 <= i < ListLength.length b -> (
+					ListNth.nth i b = ListNth.nth (i+1) c
+					))
+			end
+	
+	lemma sub_clause:
+	forall c:clause .
+		valid_clause c ->
+			match c with
+			| Nil -> true
+			| Cons _ b ->
+				valid_clause b
+			end
+	
+	lemma sub_formula0:
+	forall c:formula.
+	valid_formula c ->
+			match c with
+			| Nil -> true
+			| Cons _ b ->
+				(forall i:int. 0 <= i < ListLength.length b -> (
+					ListNth.nth i b = ListNth.nth (i+1) c
+					))
+			end
+	
+	
+	lemma sub_formula:
+	forall c:formula .
+		valid_formula c ->
+			match c with
+			| Nil -> true
+			| Cons _ b ->
+				valid_formula b
+			end
+
+	predicate all_under_clause (c:clause) (i: int) =
+			(forall j: int. 0 <= j < ListLength.length c ->
+				let (k, _) = ListNth.nth j c in
+				i >= k)
+			/\ i >= 0
+	predicate all_under (f:formula) (i: int) =
+		(forall j: int. 0 <= j < ListLength.length f -> all_under_clause (ListNth.nth j f) i) /\ i >= 0
 
 	type assignment = Mod_true | Mod_false | Undef
 
 	type impl_model = {
 		real_model: array assignment;
 		ghost model: model;
-	}
+	} invariant { size self.model = Array.length self.real_model }
 
-	(*invariant {
-		(forall i: int. 0 <= i < ListLength.length self.real_model ->
-			let (_, a) = ListNth.nth i self.real_model
-			in a <> Undef) /\
-		
-		(forall i j: int.
-			0 <= i < ListLength.length self.real_model /\
-			i < j < ListLength.length self.real_model
-			let (ki, _) = ListNth.nth i self.real_model in
-			let (kj, _) = ListNth.nth j self.real_model in
-			ki <> kj
-			) /\
-		ListLength.length self.real_model <= size self.model /\
-
-		(forall i: int. 0 <= i < ListLength.length self.real_model ->
-			let (ki, v) = ListNth.nth i self.real_model in
-			if Model.get self.model ki then
-				v = Mod_true \/ v = Maybe_true 
-			else
-				v = Mod_false \/ v = Maybe_false) 
-	}*)
-	
 	lemma formula_top:
 		forall m: model. sat m Nil
 
@@ -56,28 +97,27 @@ module Sat
 	} =
 		empty
 
-
 	let create_impl_model (s: int): impl_model
-		requires { s >= 0 } =
-		{ real_model = Array.make s Undef;
-		  model = create s; }
+		requires { s >= 0 }
+		ensures { size result.model = s /\ forall i: int. 0 <= i < s -> result.real_model[i] = Undef } =
+		let m = Array.make s Undef in
+		assert { ArrayNum.numof m Undef 0 s = s };
+		{ real_model = m;
+		  model = create s;
+		  }
 
 	let rec max_var (f: formula)
+		requires { valid_formula f }
 		ensures {
-			forall i: int. 0 <= i < ListLength.length f ->
-				(forall j: int. 0 <= j < ListLength.length (ListNth.nth i f) ->
-					let (k, _) = ListNth.nth j (ListNth.nth i f) in
-						result >= k)
+			all_under f result
 						}
 		variant {
 			ListLength.length f }
 						=
-		let rec max_var_aux f
-		ensures {
-			forall j: int. 0 <= j < ListLength.length f ->
-				let (k, _) = ListNth.nth j f in
-				result >= k }
-				variant { ListLength.length f }
+		let rec max_var_aux (f:clause)
+			requires { valid_clause f }
+			ensures { all_under_clause f result }
+			variant { ListLength.length f }
 		=
 			match f with
 			| Cons (i, _) b ->
@@ -87,10 +127,16 @@ module Sat
 		in
 		match f with
 		| Nil -> 0
-		| Cons a b -> IntMax.max (max_var_aux a) (max_var b)
+		| Cons a b ->
+			let a = max_var_aux a in
+			let b = max_var b in
+			assert { a >= 0 };
+			assert { b >= 0 };
+			IntMax.max a b
 		end
 
 	let is_sat (f:formula): option impl_model
+		requires { valid_formula f }
 		ensures {
 			match result with
 			| None -> (forall m: model. not (sat m f))
@@ -99,17 +145,35 @@ module Sat
 			}
 		=
 		let i = max_var f in
-		let m = create_impl_model i in
 
-		let rec is_sat_aux (f:formula) (m: impl_model) : bool =
+		let m = create_impl_model (i+1) in
+
+		let rec is_sat_aux (f:formula) (m: impl_model) (ghost mymap: Map.map int assignment) : bool
+		requires { i + 1  = size m.model /\ all_under f i /\ valid_formula f /\ forall i:int. 0 <= i < size m.model -> Map.get mymap i = m.real_model[i] }
+		variant { (ListLength.length f), Mapocc.occ Undef mymap 0 (size m.model) }
+		ensures {
+			if result then
+			    sat m.model f
+			else
+				(forall i: int. 0 <= i < size m.model -> m.real_model[i] = Map.get mymap i)
+			}
+		=
 			match f with
 			| Nil -> true
 			| Cons a b ->
 				let s = ListLength.length a in
 				let valid = ref false in
 				let undef_lit = ref None in
-				for i = 0 to s do
+				for i = 0 to (s-1) do
+					invariant {
+						match !undef_lit with
+						| None -> true
+						| Some (var, _) -> m.real_model[var] = Undef /\ 0 <= var < size m.model
+						end
+					}
 					let (var, va) = ListNth.nth i a in
+					(*assert { all_under_clause a ((size m.model) - 1) };*)
+					assert { 0 <= var < size m.model };
 					let mod_va = m.real_model[var] in
 					if mod_va = Undef then
 						undef_lit := Some (var, va)
@@ -117,18 +181,32 @@ module Sat
 						valid := true;
 				done;
 				if !valid then
-					is_sat_aux b m
+					is_sat_aux b m mymap
 				else
 					match !undef_lit with
 					| Some (var, va) ->
 						m.real_model[var] <- (if va then Mod_true else Mod_false);
 						let nm = { model = set m.model var va; real_model=m.real_model; } in
-						if is_sat_aux b nm then
+						if is_sat_aux b nm (Map.set mymap var (if va then Mod_true else Mod_false)) then
 							true
 						else
 							(m.real_model[var] <- (if va then Mod_false else Mod_true);
 							let nm = { model = set m.model var va; real_model=m.real_model; } in
-							if is_sat_aux f nm then
+							assert { Map.get mymap var = Undef };
+							let ghost mm = (Map.set mymap var (if va then Mod_false else Mod_true)) in
+							assert { Map.get mm var <> Undef };
+							assert { forall i: int. i <> var -> Map.get mm i = Map.get mymap i};
+							assert { 0 <= var < size m.model };
+							assert { Mapocc.occ Undef mymap 0 (var + 1) = (Mapocc.occ Undef mymap 0 var) + (Mapocc.occ Undef mymap var (var+1)) };
+							assert { Mapocc.occ Undef mymap 0 (size m.model) = (Mapocc.occ Undef mymap 0 var) + (Mapocc.occ Undef mymap var (var+1)) + (Mapocc.occ Undef mymap (var+1) (size m.model)) };
+							assert { Mapocc.occ Undef mm 0 (var + 1) = (Mapocc.occ Undef mm 0 var) + (Mapocc.occ Undef mm var (var+1)) };
+							assert { Mapocc.occ Undef mm 0 (size m.model) = (Mapocc.occ Undef mm 0 var) + (Mapocc.occ Undef mm var (var+1)) + (Mapocc.occ Undef mm (var+1) (size m.model)) };
+							assert { forall i: int. 0 <= i < var -> Map.get mm i = Map.get mymap i};
+							assert { Mapocc.occ Undef mymap 0 var = Mapocc.occ Undef mm 0 var };
+							assert { forall i: int. var + 1 <= i <size m.model -> Map.get mm i = Map.get mymap i};
+							assert { Mapocc.occ Undef mymap (var+1) (size m.model) = Mapocc.occ Undef mm (var+1) (size m.model) };
+							assert { Mapocc.occ Undef mymap 0 (size m.model) > Mapocc.occ Undef mm 0 (size m.model) };
+							if is_sat_aux f nm mm then
 								true
 							else
 								(m.real_model[var] <- Undef;
@@ -137,7 +215,7 @@ module Sat
 					end
 			end
 		in
-		if is_sat_aux f m then Some m
+		if is_sat_aux f m (Mapconst.const Undef) then Some m
 		else None
 
 

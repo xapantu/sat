@@ -25,6 +25,7 @@ theory Model
 		forall m: model.
 		forall i: int.
 		forall b: bool.
+		size (set m i b) = size m /\
 		forall j: int.
 			(i <> j -> get (set m i b) j = get m j)
 			/\ (i = j -> get (set m i b) j = b)
