@@ -93,13 +93,6 @@ module Sat
 		forall m: model. not (sat m (Cons Nil Nil))
 
 
-	let val_model () ensures {
-	let f = (Cons (Cons (0, true) Nil) Nil) in
-	
-	ListLength.length f = 1 /\ sat result f
-	} =
-		empty
-
 	let create_impl_model (s: int): impl_model
 		requires { s >= 0 }
 		ensures { size result.model = s /\ forall i: int. 0 <= i < s -> result.real_model[i] = Undef } =
@@ -267,7 +260,8 @@ module Sat
 						let (var, va) = ListNth.nth i a in
 						m.model <- set m.model var va;
 						m.real_model[var] <- (if va then Mod_true else Mod_false);
-						if is_sat_aux b m (Map.set mymap var (if va then Mod_true else Mod_false)) then begin
+								let ghost mm = ghost (Map.set mymap var (if va then Mod_true else Mod_false)) in
+						if is_sat_aux b m mm then begin
 							assert {
 								sat_clause m.model a
 							};
@@ -317,11 +311,8 @@ module Sat
 					end
 			end
 		in
-		if is_sat_aux f m (Mapconst.const Undef) then Some m
+		let ghost mmap = Mapconst.const Undef in
+		if is_sat_aux f m mmap then Some m
 		else None
-
-
+	
 end
-
-
-
