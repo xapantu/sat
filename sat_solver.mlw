@@ -163,6 +163,16 @@ module Sat
 		forall i:int.
 		0 <= i < size m ->
 			((Map.get mymap i = Mod_true -> get m i) /\ (Map.get mymap i = Mod_false -> not (get m i)))
+	
+	lemma list_nth:
+		forall f: formula, a: clause, i:int. 0 <= i < ListLength.length f -> ListNth.nth (i+1) (Cons a f) = ListNth.nth i f
+
+	lemma unsat0:
+		forall m:model, f: formula, a: clause. not (sat m f) -> exists i:int. 0 <= i < ListLength.length f /\ not (sat_clause m (ListNth.nth i f)) /\ not (sat_clause m (ListNth.nth (i+1) (Cons a f)))
+
+	
+	lemma unsat:
+		forall m:model, f: formula, a: clause. not (sat m f) -> not (sat m (Cons a f))
 
 
 
@@ -180,20 +190,30 @@ module Sat
 		let m = create_impl_model (i+1) in
 
 		let rec is_sat_aux (f:formula) (m: impl_model) (ghost mymap: Map.map int assignment) : bool
-		writes { m.model, m.real_model }
-		requires { i + 1  = size m.model /\ all_under f i /\ valid_formula f /\
-		forall i:int. 0 <= i < size m.model -> Map.get mymap i = m.real_model[i]
-		}
-		variant { (ListLength.length f), Mapocc.occ Undef mymap 0 (size m.model) }
-		ensures {
-		(forall i:int. 0 <= i < size m.model -> Map.get mymap i <> Undef -> Map.get mymap i = m.real_model[i])
-		/\	if result then
-			    sat m.model f
-			else
-				(forall mo: model. model_consistent mymap mo -> not (sat mo f)) /\
-		(forall i:int. 0 <= i < size m.model -> Map.get mymap i = m.real_model[i])
+			writes {
+				m.model, m.real_model
 			}
-		=
+			requires {
+				i + 1  = size m.model /\
+				all_under f i /\
+				valid_formula f /\
+				(forall i:int. 0 <= i < size m.model ->
+					Map.get mymap i = m.real_model[i])
+			}
+			variant {
+				(ListLength.length f),
+				Mapocc.occ Undef mymap 0 (size m.model)
+			}
+			ensures {
+				(forall i:int. 0 <= i < size m.model ->
+					Map.get mymap i <> Undef -> Map.get mymap i = m.real_model[i]) /\
+				if result then
+			    	sat m.model f
+				else
+					(forall mo: model. model_consistent mymap mo -> not (sat mo f)) /\
+					(forall i:int. 0 <= i < size m.model -> Map.get mymap i = m.real_model[i])
+			} =
+
 			match f with
 			| Nil -> true
 			| Cons a b ->
@@ -204,33 +224,43 @@ module Sat
 				for i = 0 to (s-1) do
 					invariant {
 						match !undef_lit with
-						| None -> true
-						| Some i -> let (var, _) = ListNth.nth i a in m.real_model[var] = Undef /\ 0 <= var < size m.model /\ 0 <= i < ListLength.length a
+						| None ->
+						forall j:int. 0 <= j < i ->
+								let (var, va) = ListNth.nth j a in
+									Map.get mymap var <> Undef
+						| Some i ->
+							let (var, _) = ListNth.nth i a in
+							m.real_model[var] = Undef /\
+							0 <= var < size m.model /\
+							0 <= i < ListLength.length a
 						end
 					}
 					invariant {
 						if !valid then
-						sat_clause m.model a
-						/\ (let (v, b) = ListNth.nth !valid_lit a  in
+							let (v, b) = ListNth.nth !valid_lit a  in
+							sat_clause m.model a /\
 							0 <= !valid_lit < ListLength.length a /\
 							if b then
 								Map.get mymap v = Mod_true
 							else
-								Map.get mymap v = Mod_false)
-						else true }
-
+								Map.get mymap v = Mod_false
+						else
+							forall j:int. 0 <= j < i ->
+								let (var, va) = ListNth.nth j a in
+									(Map.get mymap var = Mod_false -> va) /\
+									 (Map.get mymap var = Mod_true -> not va)
+					}
 
 					let (var, va) = ListNth.nth i a in
-					(*assert { all_under_clause a ((size m.model) - 1) };*)
-					assert { 0 <= var < size m.model };
 					let mod_va = m.real_model[var] in
 					if mod_va = Undef then
 						undef_lit := Some i
 					else if (mod_va = Mod_true && va) || (mod_va = Mod_false && not va) then
-						(
-						assert { get m.model var = va /\ sat_clause m.model a };
-						valid_lit := i;
-						valid := true;)
+						begin
+							assert { get m.model var = va /\ sat_clause m.model a };
+							valid_lit := i;
+							valid := true;
+						end
 				done;
 				if !valid then
 					is_sat_aux b m mymap
@@ -258,9 +288,23 @@ module Sat
 							if is_sat_aux f m mm then
 								true
 							else
-								(m.real_model[var] <- Undef;
+								(
+								assert {
+									(forall mo: model. model_consistent mymap mo -> get mo var = (not va) -> not (sat mo f)) /\
+									(forall mo: model. model_consistent mymap mo -> get mo var = va -> not (sat mo b))
+								};
+								m.real_model[var] <- Undef;
 								false))
-					| None -> false
+					| None ->
+						assert {
+							forall i: int. 0 <= i < ListLength.length a ->
+								let (var, va) = ListNth.nth i a in
+								Map.get mymap var <> Undef /\
+								(Map.get mymap var = Mod_false -> va) /\
+								(Map.get mymap var = Mod_true -> not va)
+						};
+						false
+							
 					end
 			end
 		in
