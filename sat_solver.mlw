@@ -151,27 +151,24 @@ module Sat
 		forall mymap: Map.map int 'a, u m: int, a b: 'a. m <= u ->
 			Mapocc.occ a mymap (m+1) u = Mapocc.occ a (Map.set mymap m b) (m+1) u
 	
-	(*lemma list_nth:
-		forall i: int, l: list 'a. 0 <= i < ListLength.length l ->
-			ListMem.mem (ListNth.nth i l) l
-	
-	lemma list_mem:
-		forall a: 'a,l: list 'a.
-			ListMem.mem a l -> exists i:int. a = ListNth.nth i l*)
-
 	predicate model_consistent (mymap: Map.map int assignment) (m:model) =
-		forall i:int.
-		0 <= i < size m ->
+		forall i:int. 0 <= i < size m ->
 			((Map.get mymap i = Mod_true -> get m i) /\ (Map.get mymap i = Mod_false -> not (get m i)))
 	
 	lemma list_nth:
-		forall f: formula, a: clause, i:int. 0 <= i < ListLength.length f -> ListNth.nth (i+1) (Cons a f) = ListNth.nth i f
+		forall f: formula, a: clause, i:int. 0 <= i < ListLength.length f ->
+			ListNth.nth (i+1) (Cons a f) = ListNth.nth i f
 
-	lemma unsat0:
-		forall m:model, f: formula, a: clause. not (sat m f) -> exists i:int. 0 <= i < ListLength.length f /\ not (sat_clause m (ListNth.nth i f)) /\ not (sat_clause m (ListNth.nth (i+1) (Cons a f)))
+	(* That lemma helps some solver, however Z3 does not need it to prove the lemma that follows. *)
+	(*lemma unsat_clause0:
+		forall m:model, f: formula, a: clause. not (sat m f) ->
+			exists i:int.
+				0 <= i < ListLength.length f /\
+				not (sat_clause m (ListNth.nth i f)) /\
+				not (sat_clause m (ListNth.nth (i+1) (Cons a f)))*)
 
 	
-	lemma unsat:
+	lemma unsat_clause:
 		forall m:model, f: formula, a: clause. not (sat m f) -> not (sat m (Cons a f))
 
 
@@ -225,9 +222,9 @@ module Sat
 					invariant {
 						match !undef_lit with
 						| None ->
-						forall j:int. 0 <= j < i ->
-								let (var, va) = ListNth.nth j a in
-									Map.get mymap var <> Undef
+							forall j:int. 0 <= j < i ->
+								let (var, _) = ListNth.nth j a in
+								Map.get mymap var <> Undef
 						| Some i ->
 							let (var, _) = ListNth.nth i a in
 							m.real_model[var] = Undef /\
@@ -247,8 +244,8 @@ module Sat
 						else
 							forall j:int. 0 <= j < i ->
 								let (var, va) = ListNth.nth j a in
-									(Map.get mymap var = Mod_false -> va) /\
-									 (Map.get mymap var = Mod_true -> not va)
+								(Map.get mymap var = Mod_false -> va) /\
+								(Map.get mymap var = Mod_true -> not va)
 					}
 
 					let (var, va) = ListNth.nth i a in
@@ -270,41 +267,53 @@ module Sat
 						let (var, va) = ListNth.nth i a in
 						m.model <- set m.model var va;
 						m.real_model[var] <- (if va then Mod_true else Mod_false);
-						if is_sat_aux b m (Map.set mymap var (if va then Mod_true else Mod_false)) then
-						(
-						assert { sat_clause m.model a };
-						assert { sat m.model b };
-							true)
-						else
-							(m.model <- set m.model var (not va);
-							m.real_model[var] <- (if va then Mod_false else Mod_true);
-							assert { Map.get mymap var = Undef };
-							let ghost mm = (Map.set mymap var (if va then Mod_false else Mod_true)) in
-							assert { forall i: int. 0 <= i < var -> Map.get mm i = Map.get mymap i};
-							assert { forall i: int. var + 1 <= i <size m.model -> Map.get mm i = Map.get mymap i};
-							assert { Mapocc.occ Undef mymap 0 (size m.model) = (Mapocc.occ Undef mymap 0 var) + (Mapocc.occ Undef mymap var (var+1)) + (Mapocc.occ Undef mymap (var+1) (size m.model)) };
-							assert { Mapocc.occ Undef mymap (var+1) (size m.model) = Mapocc.occ Undef mm (var+1) (size m.model) };
-							assert { Mapocc.occ Undef mymap 0 (size m.model) > Mapocc.occ Undef mm 0 (size m.model) };
-							if is_sat_aux f m mm then
-								true
-							else
-								(
+						if is_sat_aux b m (Map.set mymap var (if va then Mod_true else Mod_false)) then begin
+							assert {
+								sat_clause m.model a
+							};
+							assert {
+								sat m.model b
+							};
+							true
+						end
+						else (* that's the hard part to prove, especially the termination *)
+							begin
+								m.model <- set m.model var (not va);
+								m.real_model[var] <- (if va then Mod_false else Mod_true);
 								assert {
-									(forall mo: model. model_consistent mymap mo -> get mo var = (not va) -> not (sat mo f)) /\
-									(forall mo: model. model_consistent mymap mo -> get mo var = va -> not (sat mo b))
+									Map.get mymap var = Undef
 								};
-								m.real_model[var] <- Undef;
-								false))
-					| None ->
-						assert {
-							forall i: int. 0 <= i < ListLength.length a ->
-								let (var, va) = ListNth.nth i a in
-								Map.get mymap var <> Undef /\
-								(Map.get mymap var = Mod_false -> va) /\
-								(Map.get mymap var = Mod_true -> not va)
-						};
-						false
-							
+								let ghost mm = (Map.set mymap var (if va then Mod_false else Mod_true)) in
+								assert {
+									forall i: int. 0 <= i < var ->
+										Map.get mm i = Map.get mymap i
+								};
+								assert {
+									forall i: int. var + 1 <= i <size m.model ->
+										Map.get mm i = Map.get mymap i
+								};
+								(* This is already expressed as a lemma, but it seems to be hard
+								 * for the solvers to pick that particular lemma. *)
+								assert {
+									Mapocc.occ Undef mymap 0 (size m.model) =
+										(Mapocc.occ Undef mymap 0 var) +
+										(Mapocc.occ Undef mymap var (var+1)) +
+										(Mapocc.occ Undef mymap (var+1) (size m.model))
+								};
+								assert {
+									Mapocc.occ Undef mymap (var+1) (size m.model) = Mapocc.occ Undef mm (var+1) (size m.model)
+								};
+								assert {
+									Mapocc.occ Undef mymap 0 (size m.model) > Mapocc.occ Undef mm 0 (size m.model)
+								};
+								if is_sat_aux f m mm then
+									true
+								else begin
+									m.real_model[var] <- Undef;
+									false
+								end
+							end
+					| None -> false
 					end
 			end
 		in
