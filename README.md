@@ -11,12 +11,16 @@ Build
 
 Install why3:
 
-  opam install why3
+```
+opam install why3
+```
 
 
 Build:
 
-  make
+```
+make
+```
 
 
 Prove
@@ -24,4 +28,8 @@ Prove
 
 To check the DPLL algorithm itself (launch with another file to check the other part).
 
-  why3 ide -L . sat_solver.mlw
+```
+why3 ide -L . sat_solver.mlw
+```
+
+It probably needs Z3, CVC4 and Alt-Ergo to be checked.
