@@ -1,0 +1,5 @@
+.*.sw*
+sat
+_build
+*.native
+*.byte
