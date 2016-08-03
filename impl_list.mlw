@@ -1,0 +1,29 @@
+module List
+	use list.Length as ListLength
+	use list.NthNoOpt as ListNth
+	use import list.List
+	use import int.Int
+
+	let rec length (l: list 'a) : int
+		ensures { result = ListLength.length l }
+		variant { ListLength.length l }
+		=
+		match l with
+		| Nil -> 0
+		| Cons _ b -> 1 + length b
+		end
+	
+	exception Out_of_bounds
+	
+	let rec nth (i: int) (l: list 'a) : 'a
+		requires { 0 <= i < ListLength.length l }
+		ensures { result = ListNth.nth i l }
+		raises { Out_of_bounds -> false } =
+		variant { ListLength.length l }
+		match l with
+		| Cons a b ->
+			if i = 0 then a
+			else nth (i-1) b
+		| Nil -> raise Out_of_bounds
+		end
+end

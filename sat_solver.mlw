@@ -3,6 +3,7 @@ module Sat
 	use import list.List
 	use import option.Option
 	use list.Length as ListLength
+	use impl_list.List as List
 	use import array.Array
 	use array.Array as Array
 	use import model.Model
@@ -173,7 +174,10 @@ module Sat
 			| None -> (forall m: model. not (sat m f))
 			| Some m -> sat m.model f
 			end
-			}
+		}
+		raises {
+			List.Out_of_bounds -> false
+		}
 		=
 		let i = max_var f in
 
@@ -182,6 +186,9 @@ module Sat
 		let rec is_sat_aux (f:formula) (m: impl_model) (ghost mymap: Map.map int assignment) : bool
 			writes {
 				m.model, m.real_model
+			}
+			raises {
+				List.Out_of_bounds -> false
 			}
 			requires {
 				i + 1  = size m.model /\
@@ -207,7 +214,7 @@ module Sat
 			match f with
 			| Nil -> true
 			| Cons a b ->
-				let s = ListLength.length a in
+				let s = List.length a in
 				let valid = ref false in
 				let undef_lit = ref None in
 				let ghost valid_lit = ref 0 in
@@ -241,7 +248,7 @@ module Sat
 								(Map.get mymap var = Mod_true -> not va)
 					}
 
-					let (var, va) = ListNth.nth i a in
+					let (var, va) = List.nth i a in
 					let mod_va = m.real_model[var] in
 					if mod_va = Undef then
 						undef_lit := Some i
@@ -257,7 +264,7 @@ module Sat
 				else
 					match !undef_lit with
 					| Some i ->
-						let (var, va) = ListNth.nth i a in
+						let (var, va) = List.nth i a in
 						m.model <- set m.model var va;
 						m.real_model[var] <- (if va then Mod_true else Mod_false);
 								let ghost mm = ghost (Map.set mymap var (if va then Mod_true else Mod_false)) in
