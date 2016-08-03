@@ -1,0 +1,2 @@
+true: use_menhir, package(unix), annot, package(str), package(why3.extract)
+<sat/*>: for-pack(Sat)
