@@ -1,0 +1,4 @@
+S .
+B _build
+PKG ocamlbuild
+PKG why3.extract
