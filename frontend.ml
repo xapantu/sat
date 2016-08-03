@@ -1,4 +1,4 @@
-module Sat = Sat_solver__Sat
+module Sat = Sat.Sat_solver__Sat
 module Bigint = Why3extract.Why3__BigInt
 
 let test1 () =
